@@ -1,0 +1,509 @@
+---
+title: "Factorial Analysis of IPIP Big Five Personality Data"
+format: html
+execute:
+  warning: false
+  message: false
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## Imports
+
+Use `install.packages("psych")` to install the psych package. This
+package is used to perform factor analysis with the ULS (minimum
+residual) method as well as maximum likelihood, and also provides the
+MAP test via `VSS()`. At the time of writing, the latest version of
+psych is 2.6.3.
+
+```{r}
+library(psych)       # factor analysis, MAP criterion
+library(ggplot2)     # data visualisation
+library(pheatmap)    # heatmaps
+library(tidyr)       # data reshaping
+library(dplyr)       # data manipulation
+library(gridExtra)   # combining multiple plots
+
+options(digits = 5)
+```
+
+# Data Cleaning
+
+```{r}
+data_raw <- read.csv("./IPIP-FFM-data-8Nov2018/data-final.csv", sep = "\t", na.strings = c("", " ", "NaN", "NA","NULL"))
+```
+
+```{r}
+# Select columns to only keep the 50 items that measure the 5 personality traits.
+# See codebook.txt for more details on all the columns.
+data <- data_raw[, 1:50]
+
+# Remove rows where IPC != 1, as these could be multiple submissions of the same person.
+# The total number of rows in the original dataset is 1 015 341, and 696 845 after cleaning.
+cat("Number of lines removed to avoid multiple submission:", sum(data_raw$IPC != 1), "\n")
+data <- data[data_raw$IPC == 1, ]
+
+# Remove rows with missing data
+n_before <- nrow(data)
+data <- data[complete.cases(data), ]
+n_after  <- nrow(data)
+cat("Number of lines removed to avoid missing data:", n_before - n_after, "\n")
+cat("Number of lines :", n_after)
+data_mat <- as.matrix(data)
+head(data)
+```
+
+# Factor Analysis
+
+We perform factor analysis on the data to reduce the dimensionality of
+the data. In psychological terms, it means finding the underlying
+fundamental personality traits that (partially) explain the responses to
+the questions.
+
+## Note on Rotation and Interfactorial Correlations
+
+We apply factor analysis to the data, to extract the Big Five
+personality traits, with varimax rotation to make the traits more
+interpretable.
+
+We could have used non-orthogonal rotation methods, like oblimin, which
+allow for correlated factors. It is commonly recommended to use oblique
+rotation in psychometric analysis, as said in Fabrigar et al.
+(https://doi.org/10.1037/1082-989X.4.3.272):
+
+> *For many constructs examined in psychology (e.g., mental abilities,
+> personality traits, attitudes), there is substantial theoretical and
+> empirical basis for expecting these constructs (or dimensions of these
+> constructs) to be correlated with one another. Therefore, oblique
+> rotations provide a more accurate and realistic representation of how
+> constructs are likely to be related to one another.*
+
+However, our goal here is not to explain the correlations between
+factors, but to perform clustering on the factors, and we fear that
+oblique rotation will deform the space in a way that will influence the
+clustering. Additionally, Costello and Osborne
+(https://doi.org/10.1037/1082-989X.4.3.272) suggest that orthogonal and
+oblique rotation often produce similar results, so we will not lose much
+interpretability by using varimax rotation. The results given in
+appendix B of this notebook agree with this statement.
+
+## Note on the Factor Analysis Extraction Method
+
+`psych::fa()` with `fm="minres"` uses the ULS/minres method (also called
+the iterated principal factor method) to perform factor analysis, which
+does not assume that factors are normally distributed, contrary to the
+maximum likelihood method.
+
+Since the assumption that factors follow a Gaussian distribution
+directly contradicts the assumption of the Gaussian mixture model we
+will use later, we think it is preferable to use the ULS method.
+However, this does not seem to bother Gerlach, M., Farb, B., Revelle, W.
+et al. (https://doi.org/10.1038/s41562-018-0419-z), who use the ML
+method before using GMM. For the sake of comparison, we also perform
+factor analysis with the ML method in appendix A of this notebook, and
+the results are very similar to those given by the ULS method.
+
+## How Many Factors to Extract?
+
+A common method to determine the number of factors to extract is to look
+at the scree plot, which is a plot of the eigenvalues of the correlation
+matrix of the data. The eigenvalues represent the amount of variance
+explained by each factor. The scree plot shows a clear elbow at 5
+factors, which suggests that we should extract 5 factors. This is
+consistent with the fact that we are trying to extract the Big Five
+personality traits.
+
+```{r}
+#| warning: false
+# The ULS method has several names: minres, iterated principal factor method,
+# or unweighted least squares method.
+fa_result <- fa(data_mat, nfactors = 5, rotate = "varimax", fm = "minres")
+
+data_fa <- as.data.frame(fa_result$scores)
+
+# Eigenvalues of the original (unreduced) correlation matrix
+eigenvalues <- fa_result$values
+cat("Eigenvalues:", eigenvalues, "\n")
+
+# Plot the ten first eigenvalues in a scree plot
+top_10_eigenvalues <- eigenvalues[1:10]
+scree_df <- data.frame(factor = 1:10, eigenvalue = top_10_eigenvalues)
+
+ggplot(scree_df, aes(x = factor, y = eigenvalue)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(color = "blue", size = 3) +
+  scale_x_continuous(breaks = 1:10) +
+  labs(title = "Scree Plot", x = "Factor Number", y = "Eigenvalue") +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.minor = element_blank())
+```
+
+Looking at the scree plot, it is not clear that we should extract five
+factors; the solution with six factors also seems plausible.
+
+```{r}
+#| warning: false
+# Run MAP and VSS test on the correlation matrix used internally by the factor analysis
+n_of_factors_diagnostic <- VSS(data_mat, n = 10, plot = FALSE)
+summary(n_of_factors_diagnostic)
+```
+
+```{r}
+# Plot the weights of the 50 items on the 5 personality traits as a heatmap.
+# NOTE: The factor order below is inferred by inspecting which group of items
+# loads most strongly on each factor (see the loading heatmap).
+trait_names <- c("Extraversion", "Neuroticism", "Agreeableness",
+                 "Conscientiousness", "Openness")
+
+# fa$loadings is items × factors; transpose to get traits × items
+weights <- t(as.matrix(fa_result$loadings))
+rownames(weights) <- trait_names
+
+coolwarm <- colorRampPalette(c("#3B4CC0", "white", "#B40426"))(200)
+lim      <- max(abs(weights))
+breaks   <- seq(-lim, lim, length.out = 201)
+
+pheatmap(
+  weights,
+  color        = coolwarm,
+  breaks       = breaks,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  main         = "Weights of the 50 items on the 5 personality traits",
+  fontsize      = 8,
+  fontsize_row  = 9
+)
+```
+
+```{r}
+#| fig-width: 15
+#| fig-height: 4
+# From the previous plot, we can infer that factors are ordered as listed in trait_names.
+# Assign the Big Five trait names as column names.
+colnames(data_fa) <- trait_names
+
+
+data_fa_long <- pivot_longer(data_fa, cols = everything(),
+                             names_to = "trait", values_to = "score")
+data_fa_long$trait <- factor(data_fa_long$trait)
+
+ggplot(data_fa_long, aes(x = score)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 60, alpha = 0.6, color = NA) +
+  geom_density(color = "darkred", linewidth = 0.8) +
+  facet_wrap(~trait, nrow = 1, scales = "free") +
+  theme_minimal(base_size = 11) +
+  labs(x = "Score", y = "Density")
+```
+
+## Appendix A: Comparison of ULS vs ML Extraction Methods for Factor Analysis
+
+```{r}
+#| warning: false
+#| fig-height: 4
+#| fig-width: 15
+# Perform factor analysis with the maximum likelihood (ML) method,
+# for comparison with the ULS method.
+fa_ml     <- fa(data_mat, nfactors = 5, rotate = "varimax", fm = "ml",
+                scores = "regression")
+data_fa_ml <- as.data.frame(fa_ml$scores)
+colnames(data_fa_ml) <- trait_names
+loadings_ml <- as.matrix(fa_ml$loadings)
+
+weights_ml <- t(loadings_ml)
+
+# Loading matrix comparison plots
+breaks_full <- seq(-1, 1, length.out = 201)
+
+p1 <- pheatmap(weights_ml, color = coolwarm, breaks = breaks_full,
+               cluster_rows = FALSE, cluster_cols = FALSE,
+               main = "Factor loading (ML Method)",
+               fontsize = 7, fontsize_row = 8, silent = TRUE)
+p2 <- pheatmap(weights,    color = coolwarm, breaks = breaks_full,
+               cluster_rows = FALSE, cluster_cols = FALSE,
+               main = "Factor loading (ULS Method)",
+               fontsize = 7, fontsize_row = 8, silent = TRUE)
+diff_ml <- unclass(weights)- unclass(weights_ml) #unclass to avoid the rounding of "loadings" class
+p3 <- pheatmap(diff_ml,    color = coolwarm, breaks = breaks_full,
+               cluster_rows = FALSE, cluster_cols = FALSE,
+               main = "Difference (ML - ULS)",
+               fontsize = 7, fontsize_row = 8, silent = TRUE)
+
+grid.arrange(p1$gtable, p2$gtable, p3$gtable, ncol = 3,
+             widths = c(1, 1, 1))
+
+cat("Difference between the weights of the ML method and the ULS method:\n")
+diff_ml
+```
+
+```{r}
+#| fig-height: 4
+#| fig-width: 15
+# Histogram comparison: ML vs ULS distributions for each trait
+
+data_compare <- bind_rows(
+  pivot_longer(data_fa_ml, cols = everything(),
+               names_to = "trait", values_to = "score") %>%
+    mutate(method = "ML"),
+  pivot_longer(data_fa, cols = everything(),
+               names_to = "trait", values_to = "score") %>%
+    mutate(method = "ULS")
+)
+data_compare$trait <- factor(data_compare$trait)
+
+ggplot(data_compare, aes(x = score, color = method, fill = method)) +
+  
+  geom_density(alpha = 0.4, linewidth = 0.8) +
+  
+  facet_wrap(~trait, nrow = 1, scales = "free") +
+  
+  scale_fill_manual(values  = c("ML" = "royalblue", "ULS" = "darkred")) +
+  scale_color_manual(values = c("ML" = "royalblue", "ULS" = "darkred")) +
+  
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom") +
+  labs(x = "Score", y = "Density")
+```
+
+We can see that the loadings and distributions of the factors with the
+ULS method are very similar to those given by the factor analysis with
+the ML method, which suggests that the choice of extraction method does
+not have a strong influence on the results. However, we think it is
+preferable to use the ULS method, since it does not assume that factors
+are normally distributed, which is more consistent with the assumptions
+of the Gaussian mixture model we will use later.
+
+# Appendix B: Comparison of Varimax vs Oblimin Rotation Methods for Factor Analysis
+
+In the main part of the notebook, we use orthogonal rotation (varimax)
+to make the factors more interpretable. However, we could have used
+oblique (oblimin) rotation, which allows for correlated factors. We will
+see that the results given by the oblimin rotation are very similar to
+those given by the varimax rotation, which suggests that the choice of
+rotation method does not have a strong influence on the results.
+
+```{r}
+#| warning: false
+#| fig-height: 4
+#| fig-width: 15
+# Perform factor analysis with the oblimin rotation method,
+# for comparison with the varimax rotation used above.
+fa_obli      <- fa(data_mat, nfactors = 5, rotate = "oblimin", fm = "minres",
+                   scores = "regression")
+data_fa_obli <- as.data.frame(fa_obli$scores)
+
+loadings_obli  <- as.matrix(fa_obli$loadings)
+
+# From our (not shown) observations, factors are ordered as follows:
+colnames(data_fa_obli) <- trait_names
+
+weights_obli <- t(loadings_obli)
+rownames(weights_obli) <- trait_names
+
+# Loading matrix comparison plots
+p_obli <- pheatmap(weights_obli, color = coolwarm, breaks = breaks_full,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   main = "Factor loading (Oblique Rotation)",
+                   fontsize = 7, fontsize_row = 8, silent = TRUE)
+p_vari <- pheatmap(weights,      color = coolwarm, breaks = breaks_full,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   main = "Factor loading (Orthogonal Rotation)",
+                   fontsize = 7, fontsize_row = 8, silent = TRUE)
+diff_obli <- unclass(weights_obli) - unclass(weights)
+p_diff <- pheatmap(diff_obli,   color = coolwarm, breaks = breaks_full,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   main = "Difference (Oblique - Orthogonal)",
+                   fontsize = 7, fontsize_row = 8, silent = TRUE)
+
+grid.arrange(p_obli$gtable, p_vari$gtable, p_diff$gtable, ncol = 3,
+             widths = c(1, 1, 1))
+
+cat("Difference between the weights of varimax and oblimin rotation:\n")
+diff_obli
+```
+
+## Correlation Between the Factors Obtained with the Oblimin Rotation
+
+Unlike the factors obtained with the varimax rotation, the factors
+obtained with the oblimin rotation are correlated, as expected. However,
+the correlations between factors are not very strong, which suggests
+that the factors are still relatively independent from each other. This
+is consistent with the fact that the results given by the oblimin
+rotation are very similar to those given by the varimax rotation. We
+give here a comparison of the correlation matrix we found with the one
+given by Van der Linden et al. in their 2010 meta-analysis
+(https://doi.org/10.1016/j.jrp.2010.03.003).
+
+```{r}
+#| fig-height: 4
+#| fig-width: 11
+# Correlation matrix of the 5 personality traits obtained with the oblique rotation
+corr_obli <- cor(data_fa_obli)
+
+# (Uncorrected) correlation matrix from the meta-analysis of Van der Linden et al. (2010)
+corr_meta <- matrix(c(
+   1.00, -0.26,  0.18,  0.21,  0.31,
+  -0.26,  1.00, -0.26, -0.32, -0.12,
+   0.18, -0.26,  1.00,  0.31,  0.14,
+   0.21, -0.32,  0.31,  1.00,  0.14,
+   0.31, -0.12,  0.14,  0.14,  1.00
+), nrow = 5, byrow = TRUE,
+   dimnames = list(trait_names, trait_names))
+
+sd_meta <- matrix(c(
+  0.00, 0.11, 0.15, 0.15, 0.12,
+  0.11, 0.00, 0.14, 0.18, 0.12,
+  0.15, 0.14, 0.00, 0.14, 0.12,
+  0.15, 0.18, 0.14, 0.00, 0.15,
+  0.12, 0.12, 0.12, 0.15, 0.00
+), nrow = 5, byrow = TRUE)
+
+# Build annotation matrices
+annot_obli <- matrix(sprintf("%.2f", corr_obli), nrow = 5,
+                     dimnames = dimnames(corr_obli))
+annot_meta <- matrix("", nrow = 5, ncol = 5, dimnames = dimnames(corr_meta))
+for (i in 1:5) {
+  for (j in 1:5) {
+    if (i == j) {
+      annot_meta[i, j] <- sprintf("%.2f", corr_meta[i, j])
+    } else {
+      annot_meta[i, j] <- sprintf("%.2f \n(+/-%.2f)", corr_meta[i, j], sd_meta[i, j])
+    }
+  }
+}
+
+# Show the two correlation matrices side by side for comparison
+p_corr_obli <- pheatmap(
+  corr_obli, color = coolwarm, breaks = breaks_full,
+  cluster_rows = FALSE, cluster_cols = FALSE,
+  display_numbers = annot_obli, number_format = "%.2f",
+  main = "Correlation Matrix (Oblique Rotation)",
+  fontsize = 9, silent = TRUE
+)
+p_corr_meta <- pheatmap(
+  corr_meta, color = coolwarm, breaks = breaks_full,
+  cluster_rows = FALSE, cluster_cols = FALSE,
+  display_numbers = annot_meta,
+  main = "Correlation Matrix (Meta-Analysis)",
+  fontsize = 9, silent = TRUE
+)
+
+grid.arrange(p_corr_obli$gtable, p_corr_meta$gtable, ncol = 2,
+             widths = c(1, 1))
+```
+
+```{r}
+#| fig-height: 4
+#| fig-width: 11
+# Histogram comparison: oblimin vs varimax distributions for each trait
+data_compare_obli <- bind_rows(
+  pivot_longer(data_fa_obli, cols = everything(),
+               names_to = "trait", values_to = "score") %>%
+    mutate(method = "oblimin"),
+  pivot_longer(data_fa, cols = everything(),
+               names_to = "trait", values_to = "score") %>%
+    mutate(method = "varimax")
+)
+data_compare_obli$trait <- factor(data_compare_obli$trait)
+
+ggplot(data_compare_obli, aes(x = score, color = method, fill = method)) +
+  
+  geom_density(alpha = 0.4, linewidth = 0.8) +
+  
+  facet_wrap(~trait, nrow = 1, scales = "free") +
+  
+  scale_fill_manual(values  = c("oblimin" = "royalblue", "varimax" = "darkred")) +
+  scale_color_manual(values = c("oblimin" = "royalblue", "varimax" = "darkred")) +
+  
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom") +
+  labs(x = "Score", y = "Density")
+```
+# Appendix C: Pearson vs polychoric matrix for factor extraction
+
+In the previous sections of this notebook, factor extraction was performed using the standard Pearson correlation matrix. However, the dataset consists of responses measured on a 5-point Likert scale, which are inherently ordinal variables. 
+
+To ensure the robustness of our results, this appendix compares the standard approach with an analysis based on polychoric correlations. The polychoric correlation is specifically designed to estimate the relationship between latent continuous variables that have been transformed into ordered categories.
+
+The methodological importance of this choice is highlighted by Holgado–Tello et al (https://doi.org/10.1007/s11135-008-9190-y ). The authors demonstrate that when data are ordinal, polychoric correlations provide a more accurate and stable reproduction of the original factor structure compared to Pearson correlations, which can lead to biased loadings and incorrect factor counts.
+
+
+```{r}
+#| warning: false
+#| message: false
+#| fig-height: 4
+#| fig-width: 15
+
+# Perform factor analysis with the oblimin rotation method using POLYCHORIC correlations.
+# NOTE: Computing polychoric correlations on large datasets is computationally heavy.
+fa_poly      <- fa(data_mat, nfactors = 5, rotate = "oblimin", fm = "minres",
+                   cor = "poly", scores = "regression")
+data_fa_poly <- as.data.frame(fa_poly$scores)
+
+loadings_poly  <- as.matrix(fa_poly$loadings)
+# Exchange column to properly match with traits
+data_fa_poly  <- data_fa_poly[, c(1, 2, 3, 5, 4)]
+loadings_poly <- loadings_poly[, c(1, 2, 3, 5, 4)]
+# Apply the trait names to the columns and rows
+# (Assuming the factor extraction order remains the same as  Pearson oblimin)
+colnames(data_fa_poly) <- trait_names
+
+weights_poly <- t(loadings_poly)
+rownames(weights_poly) <- trait_names
+
+# Loading matrix comparison plots
+p_obli <- pheatmap(weights_obli, color = coolwarm, breaks = breaks_full,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   main = "Factor loading (Pearson Oblimin)",
+                   fontsize = 7, fontsize_row = 8, silent = TRUE)
+
+p_poly <- pheatmap(weights_poly, color = coolwarm, breaks = breaks_full,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   main = "Factor loading (Polychoric Oblimin)",
+                   fontsize = 7, fontsize_row = 8, silent = TRUE)
+
+# Calculate difference using unclass() to prevent the "loadings" rounding issue
+diff_poly <- unclass(weights_poly) - unclass(weights_obli)
+
+p_diff <- pheatmap(diff_poly,   color = coolwarm, breaks = breaks_full,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   main = "Difference (Polychoric -  Pearson)",
+                   fontsize = 7, fontsize_row = 8, silent = TRUE)
+
+grid.arrange(p_obli$gtable, p_poly$gtable, p_diff$gtable, ncol = 3,
+             widths = c(1, 1, 1))
+
+cat("Difference between the weights of Polychoric and Pearson:\n")
+print(round(diff_poly, 5))
+```
+
+```{r}
+#| fig-height: 4
+#| fig-width: 15
+# Histogram comparison: Polychoric vs Pearson correlation matrix for factor analysis for each trait
+
+data_compare_poly <- bind_rows(
+  pivot_longer(data_fa_poly, cols = everything(),
+               names_to = "trait", values_to = "score") %>%
+    mutate(method = "Polychoric"),
+  pivot_longer(data_fa_obli, cols = everything(),
+               names_to = "trait", values_to = "score") %>%
+    mutate(method = "Pearson")
+)
+
+# Convert trait to factor to control facet order if needed
+data_compare_poly$trait <- factor(data_compare_poly$trait)
+
+ggplot(data_compare_poly, aes(x = score, color = method, fill = method)) +
+  
+  geom_density(alpha = 0.4, linewidth = 0.8) +
+  
+  facet_wrap(~trait, nrow = 1, scales = "free") +
+  
+  scale_fill_manual(values  = c("Polychoric" = "royalblue", "Pearson" = "darkred")) +
+  scale_color_manual(values = c("Polychoric" = "royalblue", "Pearson" = "darkred")) +
+  
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom") +
+  labs(x = "Score", y = "Density")
+```
