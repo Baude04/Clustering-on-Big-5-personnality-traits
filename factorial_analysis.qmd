@@ -11,14 +11,8 @@ editor:
 
 ## Imports
 
-Use `install.packages("psych")` to install the psych package. This
-package is used to perform factor analysis with the ULS (minimum
-residual) method as well as maximum likelihood, and also provides the
-MAP test via `VSS()`. At the time of writing, the latest version of
-psych is 2.6.3.
-
 ```{r}
-library(psych)       # factor analysis, MAP criterion
+library(psych)       # factor analysis
 library(ggplot2)     # data visualisation
 library(pheatmap)    # heatmaps
 library(tidyr)       # data reshaping
@@ -54,6 +48,26 @@ data_mat <- as.matrix(data)
 head(data)
 ```
 
+```{r}
+# Computing polychoric correlations on large datasets is computationally heavy.
+# We check if the matrix has already been saved to avoid recalculating it every time.
+
+pmat_path <- "polychoric_matrix_IPIP-50.rds"
+
+if (file.exists(pmat_path)) {
+  cat("Loading saved polychoric matrix...\n")
+  poly_mat <- readRDS(pmat_path)
+} else {
+  cat("Computing polychoric matrix (this may take a while)...\n")
+  poly_mat_obj <- polychoric(data_mat, ML=FALSE) #ML=FALSE (default value) to use Olsson's two step procedure 
+  poly_mat <- poly_mat_obj$rho
+  
+  # Save the matrix to a file for future runs
+  saveRDS(poly_mat, pmat_path)
+  cat("Polychoric matrix saved to", pmat_path, "\n")
+}
+```
+
 # Factor Analysis
 
 We perform factor analysis on the data to reduce the dimensionality of
@@ -70,7 +84,7 @@ interpretable.
 We could have used non-orthogonal rotation methods, like oblimin, which
 allow for correlated factors. It is commonly recommended to use oblique
 rotation in psychometric analysis, as said in Fabrigar et al.
-(https://doi.org/10.1037/1082-989X.4.3.272):
+(<https://doi.org/10.1037/1082-989X.4.3.272>):
 
 > *For many constructs examined in psychology (e.g., mental abilities,
 > personality traits, attitudes), there is substantial theoretical and
@@ -83,9 +97,9 @@ However, our goal here is not to explain the correlations between
 factors, but to perform clustering on the factors, and we fear that
 oblique rotation will deform the space in a way that will influence the
 clustering. Additionally, Costello and Osborne
-(https://doi.org/10.1037/1082-989X.4.3.272) suggest that orthogonal and
-oblique rotation often produce similar results, so we will not lose much
-interpretability by using varimax rotation. The results given in
+(<https://doi.org/10.1037/1082-989X.4.3.272>) suggest that orthogonal
+and oblique rotation often produce similar results, so we will not lose
+much interpretability by using varimax rotation. The results given in
 appendix B of this notebook agree with this statement.
 
 ## Note on the Factor Analysis Extraction Method
@@ -99,7 +113,7 @@ Since the assumption that factors follow a Gaussian distribution
 directly contradicts the assumption of the Gaussian mixture model we
 will use later, we think it is preferable to use the ULS method.
 However, this does not seem to bother Gerlach, M., Farb, B., Revelle, W.
-et al. (https://doi.org/10.1038/s41562-018-0419-z), who use the ML
+et al. (<https://doi.org/10.1038/s41562-018-0419-z>), who use the ML
 method before using GMM. For the sake of comparison, we also perform
 factor analysis with the ML method in appendix A of this notebook, and
 the results are very similar to those given by the ULS method.
@@ -118,9 +132,9 @@ personality traits.
 #| warning: false
 # The ULS method has several names: minres, iterated principal factor method,
 # or unweighted least squares method.
-fa_result <- fa(data_mat, nfactors = 5, rotate = "varimax", fm = "minres")
+fa_result <- fa(poly_mat, nfactors = 5, rotate = "varimax", fm = "minres", n.obs = nrow(data_mat))
 
-data_fa <- as.data.frame(fa_result$scores)
+data_fa <- as.data.frame(factor.scores(data_mat, fa_result)$scores)
 
 # Eigenvalues of the original (unreduced) correlation matrix
 eigenvalues <- fa_result$values
@@ -144,8 +158,8 @@ factors; the solution with six factors also seems plausible.
 
 ```{r}
 #| warning: false
-# Run MAP and VSS test on the correlation matrix used internally by the factor analysis
-n_of_factors_diagnostic <- VSS(data_mat, n = 10, plot = FALSE)
+# Run MAP and VSS test on the polychoric correlation matrix
+n_of_factors_diagnostic <- VSS(poly_mat, n.obs = nrow(data_mat), n = 10, plot = FALSE)
 summary(n_of_factors_diagnostic)
 ```
 
@@ -156,8 +170,13 @@ summary(n_of_factors_diagnostic)
 trait_names <- c("Extraversion", "Neuroticism", "Agreeableness",
                  "Conscientiousness", "Openness")
 
+data_fa  <- data_fa[, c(2,1,3,5,4)]
+fa_result$loadings <- fa_result$loadings[, c(2,1,3,5,4)]
+
 # fa$loadings is items × factors; transpose to get traits × items
 weights <- t(as.matrix(fa_result$loadings))
+
+
 rownames(weights) <- trait_names
 
 coolwarm <- colorRampPalette(c("#3B4CC0", "white", "#B40426"))(200)
@@ -196,7 +215,7 @@ ggplot(data_fa_long, aes(x = score)) +
   labs(x = "Score", y = "Density")
 ```
 
-## Appendix A: Comparison of ULS vs ML Extraction Methods for Factor Analysis
+# Appendix A: Comparison of ULS vs ML Extraction Methods for Factor Analysis
 
 ```{r}
 #| warning: false
@@ -204,9 +223,13 @@ ggplot(data_fa_long, aes(x = score)) +
 #| fig-width: 15
 # Perform factor analysis with the maximum likelihood (ML) method,
 # for comparison with the ULS method.
-fa_ml     <- fa(data_mat, nfactors = 5, rotate = "varimax", fm = "ml",
-                scores = "regression")
-data_fa_ml <- as.data.frame(fa_ml$scores)
+fa_ml     <- fa(poly_mat, nfactors = 5, rotate = "varimax", fm = "ml", n.obs = nrow(data_mat))
+data_fa_ml <- as.data.frame(factor.scores(data_mat, fa_ml)$scores)
+
+# Exchange column to properly match with traits
+data_fa_ml  <- data_fa_ml[, c(1, 2, 3, 5, 4)]
+fa_ml$loadings <- fa_ml$loadings[, c(1, 2, 3, 5, 4)]
+
 colnames(data_fa_ml) <- trait_names
 loadings_ml <- as.matrix(fa_ml$loadings)
 
@@ -288,9 +311,12 @@ rotation method does not have a strong influence on the results.
 #| fig-width: 15
 # Perform factor analysis with the oblimin rotation method,
 # for comparison with the varimax rotation used above.
-fa_obli      <- fa(data_mat, nfactors = 5, rotate = "oblimin", fm = "minres",
-                   scores = "regression")
-data_fa_obli <- as.data.frame(fa_obli$scores)
+fa_obli      <- fa(poly_mat, nfactors = 5, rotate = "oblimin", fm = "minres", n.obs = nrow(data_mat))
+data_fa_obli <- as.data.frame(factor.scores(data_mat, fa_obli)$scores)
+
+# Exchange column to properly match with traits
+data_fa_obli  <- data_fa_obli[, c(1, 2, 3, 5, 4)]
+fa_obli$loadings <- fa_obli$loadings[, c(1, 2, 3, 5, 4)]
 
 loadings_obli  <- as.matrix(fa_obli$loadings)
 
@@ -332,7 +358,7 @@ is consistent with the fact that the results given by the oblimin
 rotation are very similar to those given by the varimax rotation. We
 give here a comparison of the correlation matrix we found with the one
 given by Van der Linden et al. in their 2010 meta-analysis
-(https://doi.org/10.1016/j.jrp.2010.03.003).
+(<https://doi.org/10.1016/j.jrp.2010.03.003>).
 
 ```{r}
 #| fig-height: 4
@@ -399,10 +425,10 @@ grid.arrange(p_corr_obli$gtable, p_corr_meta$gtable, ncol = 2,
 data_compare_obli <- bind_rows(
   pivot_longer(data_fa_obli, cols = everything(),
                names_to = "trait", values_to = "score") %>%
-    mutate(method = "oblimin"),
+    mutate(method = "oblimin (oblique)"),
   pivot_longer(data_fa, cols = everything(),
                names_to = "trait", values_to = "score") %>%
-    mutate(method = "varimax")
+    mutate(method = "varimax (orthogonal)")
 )
 data_compare_obli$trait <- factor(data_compare_obli$trait)
 
@@ -419,14 +445,111 @@ ggplot(data_compare_obli, aes(x = score, color = method, fill = method)) +
   theme(legend.position = "bottom") +
   labs(x = "Score", y = "Density")
 ```
+
 # Appendix C: Pearson vs polychoric matrix for factor extraction
 
-In the previous sections of this notebook, factor extraction was performed using the standard Pearson correlation matrix. However, the dataset consists of responses measured on a 5-point Likert scale, which are inherently ordinal variables. 
+## Polychoric correlation matrix
 
-To ensure the robustness of our results, this appendix compares the standard approach with an analysis based on polychoric correlations. The polychoric correlation is specifically designed to estimate the relationship between latent continuous variables that have been transformed into ordered categories.
+### The trouble with Likert scales
 
-The methodological importance of this choice is highlighted by Holgado–Tello et al (https://doi.org/10.1007/s11135-008-9190-y ). The authors demonstrate that when data are ordinal, polychoric correlations provide a more accurate and stable reproduction of the original factor structure compared to Pearson correlations, which can lead to biased loadings and incorrect factor counts.
+Exploratory factor analysis is based on a correlation matrix: from a
+correlation matrix, it infers the underlying factors that explain the
+correlations between the items. The core assumption of our study is that
+the responses to the questionnaire are strongly determined by some
+underlying *continuous* factors. So it seems intuitive that each person
+has an "internal" *continuous* response to each question that is a
+linear combination of the underlying (continuous) factors plus a random
+noise. This "internal" response is then discretized into an ordinal
+Likert scale when answering the questionnaire. In a perfect world, we
+would have direct access to these "internal" continuous responses, which
+are more reflective of the personality of the participant, and then we
+would perform the factor analysis on the correlations of these
+"internal" continuous responses. But we only have access to the Likert
+scales, which correlation underestimate the "true" underlying
+correlation, as we can see in the following theorem:
 
+> **Theorem:** If $(Z_1, Z_2)$ have a joint bivariate normal
+> distribution with correlation coefficient $\rho$, then for any
+> Borel-measurable functions $f$ and $g$ such that $f(Z_1)$ and $g(Z_2)$
+> possess finite variances, the absolute correlation between the
+> transformed variables is bounded by the absolute value of $\rho$:
+> $$|\text{corr}(f(Z_1), g(Z_2))| \leq |\rho|$$ The equality only
+> happens when $f=g=id$.
+
+> **Proof:** The proof rely on the fact that we can express $L^2$ random
+> variables (w.r.t. Gaussian measure) as series of standardized
+> Hermite-Tchebycheff polynomial, which are orthogonal w.r.t. Gaussian
+> measure. See [H.O. Lancaster(1957)](https://doi.org/10.2307/2333274)
+> for the full proof.
+
+Now if we assume that $Z_1$ and $Z_2$ are Gaussian, we can define $L_1$
+and $L_2$ as the observed ordinal Likert variables. These discrete
+variables are created by partitioning the continuous variables $Z_1$ and
+$Z_2$ using a set of thresholds (e.g., $L_1 = i$ if
+$\alpha_{i-1} < Z_1 \leq \alpha_i$, and $L_2 = j$ if
+$\beta_{j-1} < Z_2 \leq \beta_j$). Since $L_1$ and $L_2$ are created
+through step functions of the underlying continuous variables (i.e.,
+$L_1 = f(Z_1)$ and $L_2 = g(Z_2)$), it rigorously follows that the
+correlation between the discrete responses is strictly bounded by the
+correlation of the "internal" continuous variables:
+
+$$|\text{corr}(L_1, L_2)| < |\rho|$$
+
+This is why Likert-scale questionnaires tend to underestimate the "true"
+correlation between the questions. From this example, it seems very
+plausible that the naive use of Pearson correlation on Likert scale can
+give poor results. One way of addressing this issue is to use a
+polychoric correlation matrix.
+
+### Polychoric correlation estimation
+
+Given what we have said above, if we use the Pearson correlation matrix,
+we will obtain an estimation of the correlation of the Likert discrete
+variables, not the correlation of the underlying continuous ones. So we
+need a way to infer the correlation of the underlying continuous
+variables given their discretized versions. This is exactly what
+polychoric correlation is supposed to do.
+
+To compute the polychoric correlation, we assume that the underlying
+continuous latent variables $(Z_1, Z_2)$ follow a standard bivariate
+normal distribution with correlation $\rho$. The theoretical probability
+$\pi_{ij}$ of an observation falling into the $i$-th category for $L_1$
+and the $j$-th category for $L_2$ is the following:
+
+$$\pi_{ij} = \Phi_2^{}(\alpha_i, \beta_j; \rho) - \Phi_2(\alpha_{i-1}, \beta_j; \rho) - \Phi_2(\alpha_i, \beta_{j-1}; \rho) + \Phi_2(\alpha_{i-1}, \beta_{j-1}; \rho)$$
+
+where $\Phi_2$ is the cumulative distribution function (CDF) of the
+standard bivariate normal distribution.
+
+To estimate these parameters from an observed dataset where $n_{ij}$
+represents the frequency of responses in cell $(i, j)$, we use Maximum
+Likelihood Estimation (MLE). The log-likelihood function to maximize is
+defined as:
+
+$$\ell(\rho, \mathbf{\alpha}, \mathbf{\beta}) = \sum_{i} \sum_{j} n_{ij} \ln[\pi_{ij}(\rho, \alpha, \beta)]$$
+
+**Olsson's Two-Step Method** Maximizing this log-likelihood for all
+parameters ($\rho$, $\alpha$, $\beta$) simultaneously is computationally
+expensive. To solve this, the standard approach relies on [Olsson's
+(1979)](https://doi.org/10.1007/BF02296207) two-step procedure, which
+consists of first estimating the thresholds $\alpha$ and $\beta$ using
+only the marginal distributions, and then estimating the correlation
+coefficient $\rho$. Despite the theoretical non-optimality of this
+procedure, the gain in computational efficiency outweighs the loss in
+precision, as reported in Olsson's article. However, it is still
+possible to use a full maximum likelihood estimation for maximum
+statistical efficiency. In this code, we will use Olsson's two step
+method (parameter `ML=FALSE` in the `polychoric` function from `psych`
+package).
+
+### Empirical evidence of the superiority of polychoric correlation matrix in EFA
+
+The methodological importance of this choice is highlighted by
+Holgado–Tello et al (<https://doi.org/10.1007/s11135-008-9190-y> ). The
+authors demonstrate that when data are ordinal, polychoric correlations
+provide a more accurate and stable reproduction of the original factor
+structure compared to Pearson correlations, which can lead to biased
+loadings and incorrect factor counts.
 
 ```{r}
 #| warning: false
@@ -434,76 +557,181 @@ The methodological importance of this choice is highlighted by Holgado–Tello e
 #| fig-height: 4
 #| fig-width: 15
 
-# Perform factor analysis with the oblimin rotation method using POLYCHORIC correlations.
-# NOTE: Computing polychoric correlations on large datasets is computationally heavy.
-fa_poly      <- fa(data_mat, nfactors = 5, rotate = "oblimin", fm = "minres",
-                   cor = "poly", scores = "regression")
-data_fa_poly <- as.data.frame(fa_poly$scores)
+# Perform factor analysis with the oblimin rotation method using Pearson correlations.
+# NOTE: The default was set to polychoric at the beginning of the notebook for all main analyses.
+fa_pearson      <- fa(data_mat, nfactors = 5, rotate = "oblimin", fm = "minres",
+                   cor = "cor", scores = "regression")
+data_fa_pearson <- as.data.frame(fa_pearson$scores)
+loadings_pearson  <- as.matrix(fa_pearson$loadings)
 
-loadings_poly  <- as.matrix(fa_poly$loadings)
-# Exchange column to properly match with traits
-data_fa_poly  <- data_fa_poly[, c(1, 2, 3, 5, 4)]
-loadings_poly <- loadings_poly[, c(1, 2, 3, 5, 4)]
 # Apply the trait names to the columns and rows
-# (Assuming the factor extraction order remains the same as  Pearson oblimin)
-colnames(data_fa_poly) <- trait_names
+colnames(data_fa_pearson) <- trait_names
 
-weights_poly <- t(loadings_poly)
-rownames(weights_poly) <- trait_names
+weights_pearson <- t(loadings_pearson)
+rownames(weights_pearson) <- trait_names
 
 # Loading matrix comparison plots
-p_obli <- pheatmap(weights_obli, color = coolwarm, breaks = breaks_full,
-                   cluster_rows = FALSE, cluster_cols = FALSE,
-                   main = "Factor loading (Pearson Oblimin)",
-                   fontsize = 7, fontsize_row = 8, silent = TRUE)
-
-p_poly <- pheatmap(weights_poly, color = coolwarm, breaks = breaks_full,
+p_poly <- pheatmap(weights_obli, color = coolwarm, breaks = breaks_full,
                    cluster_rows = FALSE, cluster_cols = FALSE,
                    main = "Factor loading (Polychoric Oblimin)",
                    fontsize = 7, fontsize_row = 8, silent = TRUE)
 
-# Calculate difference using unclass() to prevent the "loadings" rounding issue
-diff_poly <- unclass(weights_poly) - unclass(weights_obli)
-
-p_diff <- pheatmap(diff_poly,   color = coolwarm, breaks = breaks_full,
+p_pearson <- pheatmap(weights_pearson, color = coolwarm, breaks = breaks_full,
                    cluster_rows = FALSE, cluster_cols = FALSE,
-                   main = "Difference (Polychoric -  Pearson)",
+                   main = "Factor loading (Pearson Oblimin)",
                    fontsize = 7, fontsize_row = 8, silent = TRUE)
 
-grid.arrange(p_obli$gtable, p_poly$gtable, p_diff$gtable, ncol = 3,
+# Calculate difference using unclass() to prevent the "loadings" rounding issue
+diff_pearson <- unclass(weights_pearson) - unclass(weights_obli)
+
+p_diff <- pheatmap(diff_pearson,   color = coolwarm, breaks = breaks_full,
+                   cluster_rows = FALSE, cluster_cols = FALSE,
+                   main = "Difference (Pearson - Polychoric)",
+                   fontsize = 7, fontsize_row = 8, silent = TRUE)
+
+grid.arrange(p_poly$gtable, p_pearson$gtable, p_diff$gtable, ncol = 3,
              widths = c(1, 1, 1))
 
-cat("Difference between the weights of Polychoric and Pearson:\n")
-print(round(diff_poly, 5))
+cat("Difference between the weights of Pearson and Polychoric:\n")
+print(round(diff_pearson, 5))
 ```
 
 ```{r}
 #| fig-height: 4
 #| fig-width: 15
-# Histogram comparison: Polychoric vs Pearson correlation matrix for factor analysis for each trait
+# Histogram comparison: Pearson vs Polychoric correlation matrix for factor analysis for each trait
 
-data_compare_poly <- bind_rows(
-  pivot_longer(data_fa_poly, cols = everything(),
+data_compare_pearson <- bind_rows(
+  pivot_longer(data_fa_pearson, cols = everything(),
                names_to = "trait", values_to = "score") %>%
-    mutate(method = "Polychoric"),
+    mutate(method = "Pearson"),
   pivot_longer(data_fa_obli, cols = everything(),
                names_to = "trait", values_to = "score") %>%
-    mutate(method = "Pearson")
+    mutate(method = "Polychoric")
 )
 
 # Convert trait to factor to control facet order if needed
-data_compare_poly$trait <- factor(data_compare_poly$trait)
+data_compare_pearson$trait <- factor(data_compare_pearson$trait)
 
-ggplot(data_compare_poly, aes(x = score, color = method, fill = method)) +
+ggplot(data_compare_pearson, aes(x = score, color = method, fill = method)) +
   
   geom_density(alpha = 0.4, linewidth = 0.8) +
   
   facet_wrap(~trait, nrow = 1, scales = "free") +
   
-  scale_fill_manual(values  = c("Polychoric" = "royalblue", "Pearson" = "darkred")) +
-  scale_color_manual(values = c("Polychoric" = "royalblue", "Pearson" = "darkred")) +
+  scale_fill_manual(values  = c("Pearson" = "royalblue", "Polychoric" = "darkred")) +
+  scale_color_manual(values = c("Pearson" = "royalblue", "Polychoric" = "darkred")) +
   
   theme_minimal(base_size = 11) +
   theme(legend.position = "bottom") +
   labs(x = "Score", y = "Density")
 ```
+
+```{r}
+#| fig-height: 5
+#| fig-width: 16
+#| warning: false
+
+corr_poly <- cor(data_fa_obli)
+
+corr_pearson <- cor(data_fa_pearson)
+
+annot_poly <- matrix(sprintf("%.2f", corr_poly), nrow = 5, 
+                     dimnames = dimnames(corr_poly))
+annot_pearson <- matrix(sprintf("%.2f", corr_pearson), nrow = 5, 
+                        dimnames = dimnames(corr_pearson))
+
+p_corr_poly <- pheatmap(
+  corr_poly, color = coolwarm, breaks = breaks_full,
+  cluster_rows = FALSE, cluster_cols = FALSE,
+  display_numbers = annot_poly, number_format = "%.2f",
+  main = "Factor Correlation (Polychoric Oblimin)",
+  fontsize = 9, silent = TRUE
+)
+
+p_corr_pearson <- pheatmap(
+  corr_pearson, color = coolwarm, breaks = breaks_full,
+  cluster_rows = FALSE, cluster_cols = FALSE,
+  display_numbers = annot_pearson, number_format = "%.2f",
+  main = "Factor Correlation (Pearson Oblimin)",
+  fontsize = 9, silent = TRUE
+)
+
+p_corr_meta_comp <- pheatmap(
+  corr_meta, color = coolwarm, breaks = breaks_full,
+  cluster_rows = FALSE, cluster_cols = FALSE,
+  display_numbers = annot_meta,
+  main = "Factor Correlation (Meta-Analysis)",
+  fontsize = 9, silent = TRUE
+)
+
+grid.arrange(p_corr_poly$gtable, p_corr_pearson$gtable, p_corr_meta_comp$gtable, 
+             ncol = 3, widths = c(1, 1, 1))
+```
+
+```{r}
+#| fig-height: 5
+#| fig-width: 16
+#| warning: false
+
+pearson_mat <- cor(data_mat)
+
+
+diff_item_mat <- poly_mat - pearson_mat
+
+lim_diff <- max(abs(diff_item_mat))
+breaks_diff <- seq(-lim_diff, lim_diff, length.out = 201)
+
+p_item_pearson <- pheatmap(
+  pearson_mat, 
+  color = coolwarm, 
+  breaks = breaks_full,
+  cluster_rows = FALSE, 
+  cluster_cols = FALSE,
+  main = "Item Correlation (Pearson)",
+  show_rownames = FALSE, 
+  show_colnames = FALSE, 
+  silent = TRUE
+)
+
+p_item_poly <- pheatmap(
+  poly_mat, 
+  color = coolwarm, 
+  breaks = breaks_full,
+  cluster_rows = FALSE, 
+  cluster_cols = FALSE,
+  main = "Item Correlation (Polychoric)",
+  show_rownames = FALSE, 
+  show_colnames = FALSE, 
+  silent = TRUE
+)
+
+p_item_diff <- pheatmap(
+  diff_item_mat, 
+  color = coolwarm, 
+  breaks = breaks_diff,
+  cluster_rows = FALSE, 
+  cluster_cols = FALSE,
+  main = "Difference (Polychoric - Pearson)",
+  show_rownames = FALSE, 
+  show_colnames = FALSE, 
+  silent = TRUE
+)
+
+# Display the heatmaps side by side
+grid.arrange(
+  p_item_pearson$gtable, 
+  p_item_poly$gtable, 
+  p_item_diff$gtable, 
+  ncol = 3, 
+  widths = c(1, 1, 1)
+)
+
+# Print a numerical summary of the differences in the console
+cat("Numerical summary of the differences (Polychoric - Pearson) between items:\n")
+summary(as.vector(diff_item_mat))
+```
+
+As we have said previously, the previous plot clearly indicates that
+Pearson correlation tends to underestimate the true correlation between
+*questions* (not factor).
