@@ -132,7 +132,7 @@ personality traits.
 #| warning: false
 # The ULS method has several names: minres, iterated principal factor method,
 # or unweighted least squares method.
-fa_result <- fa(poly_mat, nfactors = 5, rotate = "varimax", fm = "minres", n.obs = nrow(data_mat))
+fa_result <- fa(poly_mat, nfactors = 5, rotate = "varimax", fm = "minres", n.obs = nrow(data_mat), scores="Anderson")
 
 data_fa <- as.data.frame(factor.scores(data_mat, fa_result)$scores)
 
@@ -213,6 +213,9 @@ ggplot(data_fa_long, aes(x = score)) +
   facet_wrap(~trait, nrow = 1, scales = "free") +
   theme_minimal(base_size = 11) +
   labs(x = "Score", y = "Density")
+```
+```{r}
+write.csv(data_fa, "IPIP-50_FFM_factor_scores.csv", row.names = FALSE)
 ```
 
 # Appendix A: Comparison of ULS vs ML Extraction Methods for Factor Analysis
@@ -311,7 +314,8 @@ rotation method does not have a strong influence on the results.
 #| fig-width: 15
 # Perform factor analysis with the oblimin rotation method,
 # for comparison with the varimax rotation used above.
-fa_obli      <- fa(poly_mat, nfactors = 5, rotate = "oblimin", fm = "minres", n.obs = nrow(data_mat))
+# scores="tenBerge" to preserve correlation
+fa_obli      <- fa(poly_mat, nfactors = 5, rotate = "oblimin", fm = "minres", n.obs = nrow(data_mat), scores="tenBerge")
 data_fa_obli <- as.data.frame(factor.scores(data_mat, fa_obli)$scores)
 
 # Exchange column to properly match with traits
@@ -364,7 +368,9 @@ given by Van der Linden et al. in their 2010 meta-analysis
 #| fig-height: 4
 #| fig-width: 11
 # Correlation matrix of the 5 personality traits obtained with the oblique rotation
-corr_obli <- cor(data_fa_obli)
+corr_obli <- fa_obli$Phi
+
+rownames(corr_obli) <- colnames(corr_obli) <- trait_names
 
 # (Uncorrected) correlation matrix from the meta-analysis of Van der Linden et al. (2010)
 corr_meta <- matrix(c(
@@ -438,8 +444,8 @@ ggplot(data_compare_obli, aes(x = score, color = method, fill = method)) +
   
   facet_wrap(~trait, nrow = 1, scales = "free") +
   
-  scale_fill_manual(values  = c("oblimin" = "royalblue", "varimax" = "darkred")) +
-  scale_color_manual(values = c("oblimin" = "royalblue", "varimax" = "darkred")) +
+  scale_fill_manual(values  = c("oblimin (oblique)" = "royalblue", "varimax (orthogonal)" = "darkred")) +
+  scale_color_manual(values = c("oblimin (oblique)" = "royalblue", "varimax (orthogonal)" = "darkred")) +
   
   theme_minimal(base_size = 11) +
   theme(legend.position = "bottom") +
@@ -560,7 +566,7 @@ loadings and incorrect factor counts.
 # Perform factor analysis with the oblimin rotation method using Pearson correlations.
 # NOTE: The default was set to polychoric at the beginning of the notebook for all main analyses.
 fa_pearson      <- fa(data_mat, nfactors = 5, rotate = "oblimin", fm = "minres",
-                   cor = "cor", scores = "regression")
+                   cor = "cor", scores="tenBerge")
 data_fa_pearson <- as.data.frame(fa_pearson$scores)
 loadings_pearson  <- as.matrix(fa_pearson$loadings)
 
@@ -632,14 +638,15 @@ ggplot(data_compare_pearson, aes(x = score, color = method, fill = method)) +
 #| fig-width: 16
 #| warning: false
 
-corr_poly <- cor(data_fa_obli)
+corr_poly <- fa_obli$Phi
 
-corr_pearson <- cor(data_fa_pearson)
+corr_pearson <- fa_pearson$Phi
 
-annot_poly <- matrix(sprintf("%.2f", corr_poly), nrow = 5, 
-                     dimnames = dimnames(corr_poly))
-annot_pearson <- matrix(sprintf("%.2f", corr_pearson), nrow = 5, 
-                        dimnames = dimnames(corr_pearson))
+annot_poly <- matrix(sprintf("%.2f", corr_poly), nrow = 5)
+annot_pearson <- matrix(sprintf("%.2f", corr_pearson), nrow = 5)
+
+rownames(corr_poly) <- colnames(corr_poly) <- trait_names
+rownames(corr_pearson) <- colnames(corr_pearson) <- trait_names
 
 p_corr_poly <- pheatmap(
   corr_poly, color = coolwarm, breaks = breaks_full,
@@ -732,6 +739,6 @@ cat("Numerical summary of the differences (Polychoric - Pearson) between items:\
 summary(as.vector(diff_item_mat))
 ```
 
-As we have said previously, the previous plot clearly indicates that
-Pearson correlation tends to underestimate the true correlation between
-*questions* (not factor).
+As we have said previously, the plot clearly indicates that Pearson
+correlation tends to systematically underestimate the true correlation
+between *questions* (not factor).
