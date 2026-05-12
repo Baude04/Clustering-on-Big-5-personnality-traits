@@ -9,6 +9,112 @@ editor:
     wrap: 72
 ---
 
+## The Five-Factor Model of Personality (Big Five)
+
+The Five-Factor Model (FFM), commonly referred to as the "Big Five" or
+the Five Factor Model (FFM) is the prevailing empirical taxonomy in
+contemporary personality psychology. Psychometric research have
+demonstrated that human personality traits can be comprehensively
+organized into five broad dimensions. Consequently, each individual can
+be mathematically represented as a single point within this
+5-dimensional continuous space, where their specific coordinates
+correspond to their standing on each respective trait.
+
+These five latent constructs are:
+
+-   **Extraversion:** The tendency to seek stimulation, be outgoing, and
+    engage energetically with the external world.
+-   **Neuroticism (or Emotional Instability):** The tendency to
+    experience negative emotions, such as anxiety, anger, or depression,
+    and to be highly responsive to stress.
+-   **Agreeableness:** The tendency to be compassionate, cooperative,
+    and empathetic rather than suspicious or antagonistic towards
+    others.
+-   **Conscientiousness:** The tendency to display self-discipline, act
+    dutifully, and strive for achievement against measures or outside
+    expectations.
+-   **Openness to Experience:** The tendency to appreciate art, emotion,
+    adventure, unusual ideas, and variety of experience.
+
+In this analysis, we utilize data from the International Personality
+Item Pool (IPIP), specifically a 50-item questionnaire designed to
+measure these five distinct domains. The dataset analyzed here includes
+responses from around 700 000 participants. Because these psychological
+constructs are *latent*—meaning they cannot be observed or measured
+directly—we must infer their presence and magnitude from the observable,
+self-reported responses to the questionnaire items. To achieve this, we
+rely on the mathematical framework of Exploratory Factor Analysis.[^1]
+
+[^1]: It is sometimes more simply referred as Factor Analysis, however
+    we prefer to be precise and distinguish Exploratory Factor Analysis
+    from Confirmatory Factor Analysis (which will not be used here).
+
+## The Mathematical Framework of Exploratory Factor Analysis (EFA)
+
+Exploratory Factor Analysis (EFA) is a multivariate statistical
+technique utilized to uncover the underlying latent structure of a
+relatively large set of variables. Unlike Principal Component Analysis
+(PCA), which is merely a data reduction technique aimed at maximizing
+explained variance, EFA is a formal causal modeling technique. It
+assumes that the observed correlations between variables are the result
+of their shared reliance on a smaller number of unobserved continuous
+latent variables (the factors). As a first approximation one can see EFA
+as PCA's close cousin. In fact it has been shown empirically that
+results from the PCA and the EFA are often very similar when the
+communality is sufficiently high.
+
+Let $X_1, X_2, \dots, X_p$ be our $p$ observed variables, which in this
+context correspond to the $p=50$ individual questions of the survey. We
+postulate that these variables are standardized (mean zero and variance
+one). The common factor model asserts that each observed response $X_i$
+can be expressed as a linear combination of $m$ underlying latent
+factors $F_1, F_2, \dots, F_m$ (where $m < p$), plus a unique,
+unobserved error term $\epsilon_i$. Variable by variable, the model is
+formulated as:
+
+$$X_i = l_{i1}F_1 + l_{i2}F_2 + \dots + l_{im}F_m + \epsilon_i \quad \text{for} \quad i = 1, \dots, p$$
+
+Here, $l_{ij}$ represents the *factor loading*, which quantifies the
+direct causal effect (or weight) of the $j$-th latent factor on the
+$i$-th question.
+
+Equivalently, letting $\mathbf{X} = [X_1, X_2, \dots, X_p]^T$ be the
+random vector of the standardized observed responses, the model can be
+expressed in its more compact matrix form:
+
+$$\mathbf{X} = \mathbf{L}\mathbf{F} + \boldsymbol{\epsilon}$$
+
+Where:
+
+-   $\mathbf{L}$ is the $p \times m$ matrix of **factor loadings**
+    ($l_{ij}$).
+-   $\mathbf{F} = [F_1, F_2, \dots, F_m]^T$ contains the **common
+    factors**, which are assumed to have a mean of zero, a variance of
+    one and a correlation matrix $\boldsymbol{\Phi}$.[^2]
+-   $\boldsymbol{\epsilon} = [\epsilon_1, \epsilon_2, \dots, \epsilon_p]^T$
+    contains the **unique factors** (comprising both specific variance
+    and measurement error). These are assumed to have a mean of zero and
+    a covariance matrix $\boldsymbol{U^2}$.
+
+[^2]: It is sometimes assumed that the common factors are uncorrelated,
+    so that $\Phi = I$. In this case we get the simpler equation
+    $\boldsymbol{R} =   \mathbf{L}\mathbf{L}^T+\boldsymbol{U^2}$.
+
+A critical assumption of the EFA model is that the unique factors are
+uncorrelated with each other and with the common factors. Therefore, the
+*uniqueness matrix* $\boldsymbol{U^2}$ is a diagonal matrix. Under these
+assumptions, the correlation matrix of the observed variables, denoted
+as $\boldsymbol{R}$, can be decomposed into two distinct components:
+
+$$\boldsymbol{R} = \mathbf{L}\boldsymbol{\Phi}\mathbf{L}^T + \boldsymbol{U^2}$$
+
+Here, $\mathbf{L}\boldsymbol{\Phi}\mathbf{L}^T$ represents the variance
+shared among the questions (the *communality*), and $\boldsymbol{U^2}$
+represents the variance unique to each specific question. The
+fundamental objective of EFA is to estimate the matrices $\mathbf{L}$
+and $\boldsymbol{U^2}$ given the sample correlation or covariance matrix
+of $\mathbf{X}$.
+
 ## Imports
 
 ```{r}
@@ -70,12 +176,7 @@ if (file.exists(pmat_path)) {
 
 # Factor Analysis
 
-We perform factor analysis on the data to reduce the dimensionality of
-the data. In psychological terms, it means finding the underlying
-fundamental personality traits that (partially) explain the responses to
-the questions.
-
-## Note on Rotation and Interfactorial Correlations
+## Rotation and Interfactorial Correlations
 
 We apply factor analysis to the data, to extract the Big Five
 personality traits, with varimax rotation to make the traits more
@@ -83,8 +184,8 @@ interpretable.
 
 We could have used non-orthogonal rotation methods, like oblimin, which
 allow for correlated factors. It is commonly recommended to use oblique
-rotation in psychometric analysis, as said in Fabrigar et al.
-(<https://doi.org/10.1037/1082-989X.4.3.272>):
+rotation in psychometric analysis, as said in [Fabrigar et
+al.](https://doi.org/10.1037/1082-989X.4.3.272):
 
 > *For many constructs examined in psychology (e.g., mental abilities,
 > personality traits, attitudes), there is substantial theoretical and
@@ -96,27 +197,34 @@ rotation in psychometric analysis, as said in Fabrigar et al.
 However, our goal here is not to explain the correlations between
 factors, but to perform clustering on the factors, and we fear that
 oblique rotation will deform the space in a way that will influence the
-clustering. Additionally, Costello and Osborne
-(<https://doi.org/10.1037/1082-989X.4.3.272>) suggest that orthogonal
-and oblique rotation often produce similar results, so we will not lose
-much interpretability by using varimax rotation. The results given in
-appendix B of this notebook agree with this statement.
+clustering. Additionally, [Costello and
+Osborne](https://doi.org/10.1037/1082-989X.4.3.272) suggest that
+orthogonal and oblique rotation often produce similar results, so we
+will not lose much interpretability by using varimax rotation. The
+results given in alternative B of this notebook agree with this
+statement.
 
-## Note on the Factor Analysis Extraction Method
+## Factor Analysis Extraction Method
 
-`psych::fa()` with `fm="minres"` uses the ULS/minres method (also called
-the iterated principal factor method) to perform factor analysis, which
-does not assume that factors are normally distributed, contrary to the
-maximum likelihood method.
+`psych::fa()` with `fm="minres"` uses the minres method[^3] to perform
+factor analysis, which does not assume that factors are normally
+distributed, contrary to the maximum likelihood (ML) method.
+
+[^3]: The minres method aim to minimise the square of the off diagonal
+    coefficient of difference between the sample covariance matrix
+    $\mathbf{S}$ and the model-implied covariance matrix i.e: \$
+    \min\*{\*\\hat{\\mathbf{L}}} \sum{i \neq j} \left(
+    \mathbf{S}*{ij}-(*\hat{\mathbf{L}}\hat{\mathbf{L}}\^T){ij}\right)\^2\$
 
 Since the assumption that factors follow a Gaussian distribution
 directly contradicts the assumption of the Gaussian mixture model we
-will use later, we think it is preferable to use the ULS method.
-However, this does not seem to bother Gerlach, M., Farb, B., Revelle, W.
-et al. (<https://doi.org/10.1038/s41562-018-0419-z>), who use the ML
-method before using GMM. For the sake of comparison, we also perform
-factor analysis with the ML method in appendix A of this notebook, and
-the results are very similar to those given by the ULS method.
+will use later, we think it is preferable to use the ULS method instead
+of the ML method. However, this does not seem to bother Gerlach, M.,
+Farb, B., Revelle, W. et al.
+(<https://doi.org/10.1038/s41562-018-0419-z>), who use the ML method
+before using GMM. For the sake of comparison, we also perform factor
+analysis with the ML method in alternative A of this notebook, and the
+results are very similar to those given by the ULS method.
 
 ## How Many Factors to Extract?
 
@@ -154,7 +262,181 @@ ggplot(scree_df, aes(x = factor, y = eigenvalue)) +
 ```
 
 Looking at the scree plot, it is not clear that we should extract five
-factors; the solution with six factors also seems plausible.
+factors; the solution with six factors also seems plausible. We will
+look at Velicer's Minimal Average Partial (MAP) criterion, which is
+commonly considered to be one of the best criterion for choosing how
+much factor we should extract.
+
+### Velicer's MAP criterion
+
+Before defining the MAP criterion, we first need to define the partial
+correlation matrix.
+
+Let $X$ be a centered random vector of dimension $(p + m) \times 1$. We
+partition $X$ into two subvectors: $X_1$ of dimension $p \times 1$ and
+$X_2$ of dimension $m \times 1$, such that:
+
+$$X = \begin{bmatrix} X_1 \\ X_2 \end{bmatrix}$$
+
+Let $C:= \text{Cov}(X)$ . Partitioning $C$ conformably with $X$ yields:
+
+$$C = \begin{bmatrix} C_{11} & C_{12} \\ C_{12}^T & C_{22} \end{bmatrix}$$
+where $C_{11} = \text{Cov}(X_1)$, $C_{22} = \text{Cov}(X_2)$, and
+$C_{12} = \text{Cov}(X_1, X_2)$. We assume that $C_{22}$ is nonsingular.
+
+To partial out the effect of $X_2$ from $X_1$, we consider the best
+linear predictor of $X_1$ based on $X_2$. This is derived from the
+population linear regression of $X_1$ on $X_2$. The matrix of regression
+coefficients is given by $C_{12}C_{22}^{-1}$[^4].
+
+[^4]: For those who are not familiar with this last expression, we can
+    give an equivalent expression in the usual (more restrictive)
+    multiple linear regression framework:
+
+    Let's assume that we have a uniform probability on the sample space
+    $\Omega = \{1,\dots,n\}$ and that for all $i \in \Omega$,
+    $X_2(i) = \mathbb{X}_{i, \cdot}^T$ and $X_1(i)=\mathbb{Y}_i$ :
+    $C_{22}$ would be $\frac{1}{n}\mathbb{X}^T\mathbb{X}$, and $C_{21}$
+    would be $\frac{1}{n}(\mathbb{X}^T \mathbb{Y})$, so that we get
+    $\hat{\beta} = (\frac{1}{n} \mathbb{X}^T \mathbb{X})^{-1} (\frac{1}{n} \mathbb{X}^T \mathbb{Y}) = {C}_{22}^{-1} {C}_{21}$,
+    and so $\hat{X}_1 = (C_{12}C_{22}^{-1}) X_2$ translates into the
+    well known formula $\hat{X}_1 = \hat{\beta}^T X_2$.
+
+We now define the residual vector $e$, which represents the portion of
+$X_1$ that is orthogonal to (and thus uncorrelated with) the vector
+space spanned by $X_2$:
+
+$$e = X_1 - C_{12}C_{22}^{-1}X_2$$
+
+The matrix of partial variances and covariances of $X_1$ given $X_2$,
+denoted $C_{11}^*$, is defined as the covariance matrix of the residual
+vector $e$. By applying the bilinear properties of the covariance
+operator, we compute $\text{Cov}(e)$:
+
+$$C_{11}^* = \text{Cov}(X_1 - C_{12}C_{22}^{-1}X_2)$$
+$$C_{11}^* = \text{Cov}(X_1) + \text{Cov}(C_{12}C_{22}^{-1}X_2) - \text{Cov}(X_1, C_{12}C_{22}^{-1}X_2) - \text{Cov}(C_{12}C_{22}^{-1}X_2, X_1)$$
+Applying the property $\text{Cov}(AY) = A\text{Cov}(Y)A'$ for a constant
+matrix $A$ and random vector $Y$:
+
+$$C_{11}^* = C_{11} + (C_{12}C_{22}^{-1})\text{Cov}(X_2)(C_{12}C_{22}^{-1})' - \text{Cov}(X_1, X_2)(C_{12}C_{22}^{-1})' - (C_{12}C_{22}^{-1})\text{Cov}(X_2, X_1)$$
+Substitute the block matrices $C_{22} = \text{Cov}(X_2)$ and
+$C_{12} = \text{Cov}(X_1, X_2)$. Note that
+$\text{Cov}(X_2, X_1) = C_{12}'$ and $(C_{22}^{-1})' = C_{22}^{-1}$ due
+to symmetry:
+
+$$C_{11}^* = C_{11} + C_{12}C_{22}^{-1}C_{22}C_{22}^{-1}C_{12}' - C_{12}C_{22}^{-1}C_{12}' - C_{12}C_{22}^{-1}C_{12}'$$
+Since $C_{22}C_{22}^{-1} = I$, the expression simplifies to:
+
+$$C_{11}^* = C_{11} + C_{12}C_{22}^{-1}C_{12}' - 2C_{12}C_{22}^{-1}C_{12}'$$
+$$C_{11}^* = C_{11} - C_{12}C_{22}^{-1}C_{12}'$$
+
+A correlation matrix is derived by scaling a covariance matrix by the
+inverse of the standard deviations of its variables. Let $D$ be a
+diagonal matrix containing the main diagonal elements of the partial
+covariance matrix $C_{11}^*$:
+
+$$D = \text{Diag}(C_{11}^*)$$The diagonal elements of $D$ are the
+partial variances. Consequently, $D^{-1/2}$ is a diagonal matrix
+containing the reciprocals of the partial standard deviations.
+Pre-multiplying and post-multiplying $C_{11}^*$ by this matrix
+standardizes the partial covariances, yielding the partial correlation
+matrix $R_{11}^*$:
+
+$$R_{11}^* = D^{-1/2}C_{11}^*D^{-1/2}$$Substituting the derived
+expression for $C_{11}^*$, we obtain
+$R_{11}^* = D^{-1/2}(C_{11} - C_{12}C_{22}^{-1}C_{12}')D^{-1/2}$.
+
+To connect the general partial correlation framework to the EFA model,
+the notations translate as follows:
+
+-   $X_1 \equiv \mathbf{X}$: The vector of observed variables.
+
+-   $X_2 \equiv \mathbf{F}$: The vector of latent factors (or extracted
+    principal components).
+
+-   $C^*_{11} \equiv \boldsymbol{U^2}$: The residual covariance matrix
+    corresponds to the diagonal uniqueness matrix.
+
+-   $R^*_{11} \equiv \mathbf{I}$ (Theoretically): The partial
+    correlation matrix of the observed variables after partialling out
+    the factors. As the standardized version of the diagonal
+    $\boldsymbol{U^2}$ matrix, a perfectly specified theoretical model
+    yields the identity matrix.
+
+The Minimum Average Partial (MAP) criterion is just the sum of squared
+off diagonal elements of the *empirical* partial correlation matrix
+$\hat{R}_{11}^*$, denoted here by $f_m$. It is supposed to be minimal
+when the number of extracted factors $m$ attains its optimal values.
+
+Here is another explanation of the rational behind this criterion from
+[Velicer's original 1976 paper](https://doi.org/10.1007/BF02293557):
+
+> In order to better understand why the value $f_m$ first decreases and
+> then increases, consider the general form of a partial correlation
+> equation $$
+> \begin{equation*}
+> r_{i j, y}=\frac{r_{i j}-r_{j y} r_{i y}}{\left(\left(1-r_{j y}{ }^2\right)\left(1-r_{i y}{ }^2\right)\right)^{1 / 2}}
+> \end{equation*}
+> $$ where $i, j$ represent any two of the $p$ observed variables and
+> $y$ represents a \[factor\]. With no loss of generality, we assume
+> $r_{i j}, r_{i j}$, and $r_{i y}$ to be positive. The value of the
+> partial correlation will decrease as long as the numerator decreases
+> faster than the denominator. The value of the partial correlation will
+> increase whenever the reverse is true; for example, when $r_{iy}$ is
+> large and $r_{j y}$ is small. *Such a situation would occur if a
+> \[factor\] has a high correlation with only one variable and near zero
+> correlations with the others (commonly referred to as a "specific")*.
+> This explanation can be extended inductively to the case where more
+> than one \[factor\] has been extracted by using $k$-th order partials
+> calculated from ( $k-1$-th) order partials. Using this stopping rule,
+> the first $m$ \[factors\] could be referred to as "common
+> \[factors\]". We would expect that two or more variables would have
+> "high" loadings on these \[factors\]. The remaining $m+1$ to $p$
+> \[factors\] may include some that have adequate reliability. However,
+> these will be "unique" \[factors\] (i.e., having "high" loadings on
+> only one of the original variables).
+
+In other terms, as you extract "common factors" (which relate to
+multiple variables), the remaining correlations between those variables
+successfully decrease. But if you extract a "unique factor" (which
+relates strongly to only *one* variable), the mathematical formula
+shrinks the denominator more than the numerator, which artificially
+inflates the remaining correlations. Therefore, the overall value $f_m$
+drops while you are finding useful common factors, and starts to rise as
+soon as you begin extracting factors specific to single variables.
+
+### Very Simple Structure criterion
+
+Most people, when interpreting a factor solution, will highlight the
+large (salient) loadings and ignore the small loadings. That is, they
+are interpreting the factor matrix as if it had simple structure. How
+well does this simplified matrix reproduce the original matrix ? To
+quantify this, let $c$ be the complexity (number of non zero loadings)
+of an item and $max_c$ be the greatest (absolute) $c$ loadings for an
+item, then find the Very Simple Structure matrix, $\hat{\mathbf{S}}_c$,
+where
+$$ \hat{s}_{cij} = \begin{cases} \hat{l}_{ij} & \text{if } \hat{l}_{ij} \in max_c(\hat{l}_{i.}) \\ 0 & \text{otherwise} \end{cases} $$Then
+let\
+$$ \hat{\mathbf{R}}_{sc}^* = \hat{\mathbf{R}} - \hat{\mathbf{S}}_c\hat{\mathbf{S}}_c^T $$and\
+$$ VSS_c = 1 - \frac{\mathbf{1}{\hat{\mathbf{R}}_{sc}^{*\odot 2}}\mathbf{1}' - tr(\hat{\mathbf{R}}_{sc}^*)}{\mathbf{1}\hat{\mathbf{R}}^{\odot 2}\mathbf{1}' - tr(\hat{\mathbf{R}})} $$The
+VSS criterion for a complexity $c$ is 1 - the squared residual
+correlations divided by the squared observed correlations, where the
+residuals are found by the “simplified” factor equation
+$\hat{\mathbf{R}}_{sc}^* = \hat{\mathbf{R}} - \hat{\mathbf{S}}_c\hat{\mathbf{S}}_c^T$.
+[^5]
+
+[^5]: This presentation of the VSS criterion comes from the
+    [lectures](https://www.personality-project.org/r/book/Chapter6.pdf)
+    of one its authors, W.Revelle (who is also the author of the psych R
+    package we are using here).
+
+The VSS criterion is less used than the MAP in the literature. In fact
+the VSS criterion makes the strong assumption that the loadings of
+variable on factors are simple, which is not always the case. Our
+personal preference goes to the MAP criterion, which seems more
+objective.
+
+Here are now the results of both MAP and VSS criterion.
 
 ```{r}
 #| warning: false
@@ -162,6 +444,12 @@ factors; the solution with six factors also seems plausible.
 n_of_factors_diagnostic <- VSS(poly_mat, n.obs = nrow(data_mat), n = 10, plot = FALSE)
 summary(n_of_factors_diagnostic)
 ```
+
+The MAP criterion advises us to extract six factors. In fact six factor
+model have largely been discussed in the literature, such as the HEXACO,
+which is more or less the Big 5 with the addition of a honesty-humility
+trait. However, since our data have been specifically designed to
+estimate the Big 5 model, we will stick to a five factor model here.
 
 ```{r}
 # Plot the weights of the 50 items on the 5 personality traits as a heatmap.
@@ -214,11 +502,12 @@ ggplot(data_fa_long, aes(x = score)) +
   theme_minimal(base_size = 11) +
   labs(x = "Score", y = "Density")
 ```
+
 ```{r}
 write.csv(data_fa, "IPIP-50_FFM_factor_scores.csv", row.names = FALSE)
 ```
 
-# Appendix A: Comparison of ULS vs ML Extraction Methods for Factor Analysis
+# Alternative A: Comparison of ULS vs ML Extraction Methods for Factor Analysis
 
 ```{r}
 #| warning: false
@@ -299,7 +588,7 @@ preferable to use the ULS method, since it does not assume that factors
 are normally distributed, which is more consistent with the assumptions
 of the Gaussian mixture model we will use later.
 
-# Appendix B: Comparison of Varimax vs Oblimin Rotation Methods for Factor Analysis
+# Alternative B: Comparison of Varimax vs Oblimin Rotation Methods for Factor Analysis
 
 In the main part of the notebook, we use orthogonal rotation (varimax)
 to make the factors more interpretable. However, we could have used
@@ -452,7 +741,7 @@ ggplot(data_compare_obli, aes(x = score, color = method, fill = method)) +
   labs(x = "Score", y = "Density")
 ```
 
-# Appendix C: Pearson vs polychoric matrix for factor extraction
+# Alternative C: Pearson vs polychoric matrix for factor extraction
 
 ## Polychoric correlation matrix
 
@@ -551,7 +840,7 @@ package).
 ### Empirical evidence of the superiority of polychoric correlation matrix in EFA
 
 The methodological importance of this choice is highlighted by
-Holgado–Tello et al (<https://doi.org/10.1007/s11135-008-9190-y> ). The
+[Holgado–Tello et al](https://doi.org/10.1007/s11135-008-9190-y). The
 authors demonstrate that when data are ordinal, polychoric correlations
 provide a more accurate and stable reproduction of the original factor
 structure compared to Pearson correlations, which can lead to biased
